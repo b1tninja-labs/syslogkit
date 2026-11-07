@@ -21,18 +21,18 @@ __all__ = [
 
 
 def parse(raw: bytes) -> Message:
-    """Pending behaviour defined by RFC 5424.
+    """Pending behaviour defined by RFC 5424 sec. 6.
 
     Not implemented yet. See the ``message.parse()`` row in ROADMAP.md; this stub raises
     on purpose so nothing downstream mistakes it for working code.
     """
-    raise NotImplementedError("parse() is not implemented: RFC 5424")
+    raise NotImplementedError("parse() is not implemented: RFC 5424 sec. 6")
 
 
 def format(msg: Message) -> bytes:
-    """Pending behaviour defined by RFC 5424.
+    """Pending behaviour defined by RFC 5424 sec. 6.
 
     Not implemented yet. See the ``message.format()`` row in ROADMAP.md; this stub raises
     on purpose so nothing downstream mistakes it for working code.
     """
-    raise NotImplementedError("format() is not implemented: RFC 5424")
+    raise NotImplementedError("format() is not implemented: RFC 5424 sec. 6")

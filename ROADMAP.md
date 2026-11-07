@@ -11,23 +11,27 @@ behaviour regressed. Reading the code and agreeing with it is not enough. That i
 Legend: `[ok]` implemented and pinned by a named test -- `[part]` partial, with what is
 missing stated -- `[ ]` not implemented -- `[no]` deliberate non-goal.
 
+A Where cell marked `(to be written)` names the test that will pin the row once it exists; no
+such test has been written yet, and the row cannot leave `[ ]` until it has. The Milestone
+column places the row on the ladder in section 2, and `-` means it is not placed yet.
+
 Update the affected row in the same commit that changes the behaviour. A row and its test
 drift apart within one release, and the document becomes useless exactly when it is needed.
 
 ## 1. Obligations
 
-| Obligation | Spec | Status | Where |
-|---|---|---|---|
-| `message.parse()` | RFC 5424 | `[ ]` | `tests/test_obligations.py::parse` |
-| `message.format()` | RFC 5424 | `[ ]` | `tests/test_obligations.py::format` |
-| `sd.encode_sd()` | RFC 5424 | `[ ]` | `tests/test_obligations.py::encode_sd` |
-| `sd.decode_sd()` | RFC 5424 | `[ ]` | `tests/test_obligations.py::decode_sd` |
-| `framing.frame_octet_counted()` | RFC 6587 | `[ ]` | `tests/test_obligations.py::frame_octet_counted` |
-| `framing.unframe()` | RFC 6587 | `[ ]` | `tests/test_obligations.py::unframe` |
-| `receiver.listen_tls()` | RFC 5425, RFC 9662 | `[ ]` | `tests/test_obligations.py::listen_tls` |
-| `receiver.listen_udp()` | RFC 5426 | `[ ]` | `tests/test_obligations.py::listen_udp` |
-| `tls.client_context()` | RFC 5425, RFC 9662 | `[ ]` | `tests/test_obligations.py::client_context` |
-| `legacy.parse_3164()` | RFC 3164 | `[ ]` | `tests/test_obligations.py::parse_3164` |
+| Obligation | Spec | Status | Where | Milestone |
+|---|---|---|---|---|
+| `message.parse()` | RFC 5424 sec. 6 | `[ ]` | `tests/test_obligations.py::test_parse` (to be written) | M1 |
+| `message.format()` | RFC 5424 sec. 6 | `[ ]` | `tests/test_obligations.py::test_format` (to be written) | M1 |
+| `sd.encode_sd()` | RFC 5424 sec. 6.3 | `[ ]` | `tests/test_obligations.py::test_encode_sd` (to be written) | M1 |
+| `sd.decode_sd()` | RFC 5424 sec. 6.3 | `[ ]` | `tests/test_obligations.py::test_decode_sd` (to be written) | M1 |
+| `framing.frame_octet_counted()` | RFC 6587 sec. 3.4.1 | `[ ]` | `tests/test_obligations.py::test_frame_octet_counted` (to be written) | M3 |
+| `framing.unframe()` | RFC 6587 sec. 3.4 | `[ ]` | `tests/test_obligations.py::test_unframe` (to be written) | M3 |
+| `receiver.listen_tls()` | RFC 5425 sec. 4, RFC 9662 | `[ ]` | `tests/test_obligations.py::test_listen_tls` (to be written) | M4 |
+| `receiver.listen_udp()` | RFC 5426 sec. 3 | `[ ]` | `tests/test_obligations.py::test_listen_udp` (to be written) | M2 |
+| `tls.client_context()` | RFC 5425 sec. 4, RFC 9662 | `[ ]` | `tests/test_obligations.py::test_client_context` (to be written) | M4 |
+| `legacy.parse_3164()` | RFC 3164 | `[ ]` | `tests/test_obligations.py::test_parse_3164` (to be written) | M1 |
 
 ## 2. Milestones
 
@@ -58,6 +62,7 @@ the code existing. Coverage in `pyproject.toml` ratchets in the same commit.
 ## 5. Open questions
 
 - does the receiver own backpressure policy or expose a hook for the operator to
+- M5 (drop accounting, backpressure, metrics) and M6 (DTLS, RFC 6012) have no api rows: add rows for them, or drop the rungs
 
 ## 6. Publication checklist
 

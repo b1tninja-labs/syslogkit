@@ -15,15 +15,15 @@ import pytest
 import syslogkit as package
 
 SURFACE = [
-    ("message", "parse", "RFC 5424"),
-    ("message", "format", "RFC 5424"),
-    ("sd", "encode_sd", "RFC 5424"),
-    ("sd", "decode_sd", "RFC 5424"),
-    ("framing", "frame_octet_counted", "RFC 6587"),
-    ("framing", "unframe", "RFC 6587"),
-    ("receiver", "listen_tls", "RFC 5425, RFC 9662"),
-    ("receiver", "listen_udp", "RFC 5426"),
-    ("tls", "client_context", "RFC 5425, RFC 9662"),
+    ("message", "parse", "RFC 5424 sec. 6"),
+    ("message", "format", "RFC 5424 sec. 6"),
+    ("sd", "encode_sd", "RFC 5424 sec. 6.3"),
+    ("sd", "decode_sd", "RFC 5424 sec. 6.3"),
+    ("framing", "frame_octet_counted", "RFC 6587 sec. 3.4.1"),
+    ("framing", "unframe", "RFC 6587 sec. 3.4"),
+    ("receiver", "listen_tls", "RFC 5425 sec. 4, RFC 9662"),
+    ("receiver", "listen_udp", "RFC 5426 sec. 3"),
+    ("tls", "client_context", "RFC 5425 sec. 4, RFC 9662"),
     ("legacy", "parse_3164", "RFC 3164"),
 ]
 
@@ -42,7 +42,10 @@ def test_surface_is_documented(module_name, fn, cite):
     module = importlib.import_module(package.__name__ + "." + module_name)
     target = getattr(module, fn)
     assert target.__doc__, fn + " needs a docstring"
-    assert cite in target.__doc__, fn + " must cite the document that defines it"
+    # Docstrings are wrapped, so a long citation can span a line break; compare words, not layout.
+    assert " ".join(cite.split()) in " ".join(target.__doc__.split()), (
+        fn + " must cite the document that defines it"
+    )
 
 
 @pytest.mark.parametrize(("module_name", "fn", "cite"), SURFACE)

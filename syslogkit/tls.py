@@ -15,9 +15,9 @@ __all__ = [
 
 
 def client_context(ca: bytes, profile: str) -> ssl.SSLContext:
-    """Pending behaviour defined by RFC 5425, RFC 9662.
+    """Pending behaviour defined by RFC 5425 sec. 4, RFC 9662.
 
     Not implemented yet. See the ``tls.client_context()`` row in ROADMAP.md; this stub
     raises on purpose so nothing downstream mistakes it for working code.
     """
-    raise NotImplementedError("client_context() is not implemented: RFC 5425, RFC 9662")
+    raise NotImplementedError("client_context() is not implemented: RFC 5425 sec. 4, RFC 9662")

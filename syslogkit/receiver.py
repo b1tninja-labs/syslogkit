@@ -22,18 +22,18 @@ __all__ = [
 
 
 async def listen_tls(host: str, port: int, context: ssl.SSLContext) -> Receiver:
-    """Pending behaviour defined by RFC 5425, RFC 9662.
+    """Pending behaviour defined by RFC 5425 sec. 4, RFC 9662.
 
     Not implemented yet. See the ``receiver.listen_tls()`` row in ROADMAP.md; this stub
     raises on purpose so nothing downstream mistakes it for working code.
     """
-    raise NotImplementedError("listen_tls() is not implemented: RFC 5425, RFC 9662")
+    raise NotImplementedError("listen_tls() is not implemented: RFC 5425 sec. 4, RFC 9662")
 
 
 async def listen_udp(host: str, port: int) -> Receiver:
-    """Pending behaviour defined by RFC 5426.
+    """Pending behaviour defined by RFC 5426 sec. 3.
 
     Not implemented yet. See the ``receiver.listen_udp()`` row in ROADMAP.md; this stub
     raises on purpose so nothing downstream mistakes it for working code.
     """
-    raise NotImplementedError("listen_udp() is not implemented: RFC 5426")
+    raise NotImplementedError("listen_udp() is not implemented: RFC 5426 sec. 3")

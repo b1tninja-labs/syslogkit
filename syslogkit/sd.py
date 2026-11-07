@@ -14,18 +14,18 @@ __all__ = [
 
 
 def encode_sd(elements: list) -> str:
-    """Pending behaviour defined by RFC 5424.
+    """Pending behaviour defined by RFC 5424 sec. 6.3.
 
     Not implemented yet. See the ``sd.encode_sd()`` row in ROADMAP.md; this stub raises
     on purpose so nothing downstream mistakes it for working code.
     """
-    raise NotImplementedError("encode_sd() is not implemented: RFC 5424")
+    raise NotImplementedError("encode_sd() is not implemented: RFC 5424 sec. 6.3")
 
 
 def decode_sd(text: str) -> list:
-    """Pending behaviour defined by RFC 5424.
+    """Pending behaviour defined by RFC 5424 sec. 6.3.
 
     Not implemented yet. See the ``sd.decode_sd()`` row in ROADMAP.md; this stub raises
     on purpose so nothing downstream mistakes it for working code.
     """
-    raise NotImplementedError("decode_sd() is not implemented: RFC 5424")
+    raise NotImplementedError("decode_sd() is not implemented: RFC 5424 sec. 6.3")

@@ -80,7 +80,8 @@ document, which is the honest grain size for a plan. See [docs/rfc-map.md](docs/
 ## Install
 
 ```bash
-git clone https://github.com/b1tninja/syslogkit.cd syslogkit
+git clone https://github.com/b1tninja/syslogkit.git
+cd syslogkit
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\\Scripts\\Activate.ps1
 pip install -e ".[dev]"

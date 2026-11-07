@@ -14,18 +14,18 @@ __all__ = [
 
 
 def frame_octet_counted(msg: bytes) -> bytes:
-    """Pending behaviour defined by RFC 6587.
+    """Pending behaviour defined by RFC 6587 sec. 3.4.1.
 
     Not implemented yet. See the ``framing.frame_octet_counted()`` row in ROADMAP.md;
     this stub raises on purpose so nothing downstream mistakes it for working code.
     """
-    raise NotImplementedError("frame_octet_counted() is not implemented: RFC 6587")
+    raise NotImplementedError("frame_octet_counted() is not implemented: RFC 6587 sec. 3.4.1")
 
 
 def unframe(buffer: bytes) -> tuple:
-    """Pending behaviour defined by RFC 6587.
+    """Pending behaviour defined by RFC 6587 sec. 3.4.
 
     Not implemented yet. See the ``framing.unframe()`` row in ROADMAP.md; this stub
     raises on purpose so nothing downstream mistakes it for working code.
     """
-    raise NotImplementedError("unframe() is not implemented: RFC 6587")
+    raise NotImplementedError("unframe() is not implemented: RFC 6587 sec. 3.4")
