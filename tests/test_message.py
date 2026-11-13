@@ -261,3 +261,21 @@ def test_format_roundtrip(facility, severity, stamp, host, app, pid, mid, msg, u
         utf8,
     )
     assert parse(format(original)) == original
+
+
+def test_relay_forwards_malformed_sd_unaltered():
+    from syslogkit.message import parse_relay
+
+    good = b'<34>1 2003-10-11T22:14:15.003Z h a - ID47 [x a="1"] msg'
+    relayed = parse_relay(good)
+    assert relayed.raw == good and relayed.message is not None and relayed.sd_error is None
+    # RFC 5424 sec. 6.3: a relay MUST forward malformed SD without alteration, odd bytes and all
+    bad = b'<34>1 2003-10-11T22:14:15.003Z h a - ID47 [x a="1] \xff\x00 [broken'
+    with pytest.raises(MessageError):
+        parse(bad)
+    relayed = parse_relay(bad)
+    assert relayed.raw is bad
+    assert relayed.message is None and relayed.sd_error and "STRUCTURED-DATA" in relayed.sd_error
+    # a bad header is not a relay case: the message is not RFC 5424 at all
+    with pytest.raises(MessageError):
+        parse_relay(b"not syslog")

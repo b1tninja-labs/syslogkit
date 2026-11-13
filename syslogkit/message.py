@@ -13,7 +13,8 @@ Policy decisions, each pinned by a test:
   ``msg``. A BOM followed by invalid UTF-8 is kept verbatim (BOM included) with
   ``msg_is_utf8`` False, because a relay must not lose octets.
 * A malformed STRUCTURED-DATA makes the whole message raise :class:`MessageError`; a
-  relay that must forward it unaltered should forward the original bytes (sec. 6.3 para 5).
+  relay that must forward it unaltered uses :func:`parse_relay` and forwards its ``raw``
+  (sec. 6.3 para 5).
 * A version above 1 is parsed and returned (``version`` says so); RFC 5424 defines only 1.
 """
 
@@ -29,9 +30,11 @@ from .sd import SdElement, SdError, decode_sd_bytes, encode_sd
 __all__ = [
     "BOM",
     "MessageError",
+    "RelayMessage",
     "SyslogMessage",
     "format",
     "parse",
+    "parse_relay",
     "parse_timestamp",
 ]
 
@@ -190,6 +193,34 @@ def parse(raw: bytes) -> SyslogMessage:
         msg=body,
         msg_is_utf8=is_utf8,
     )
+
+
+@dataclass(frozen=True)
+class RelayMessage:
+    """What a relay holds for one message: the original octets and, when they parse, the message.
+
+    ``message`` is ``None`` when the STRUCTURED-DATA is malformed; ``sd_error`` then says why.
+    Whatever the outcome, a relay forwards ``raw`` and never re-serialises ``message``.
+    """
+
+    raw: bytes
+    message: SyslogMessage | None
+    sd_error: str | None = None
+
+
+def parse_relay(raw: bytes) -> RelayMessage:
+    """Parse for a relay (RFC 5424 sec. 6.3): malformed STRUCTURED-DATA is not an error.
+
+    RFC 5424 sec. 6.3 lets a collector ignore a malformed SD-ELEMENT but says a relay MUST
+    forward it without alteration. The returned ``raw`` is the input octet for octet. A header
+    that does not parse is still a :class:`MessageError`, because the message is not RFC 5424.
+    """
+    try:
+        return RelayMessage(raw, parse(raw))
+    except MessageError as error:
+        if isinstance(error.__cause__, SdError):
+            return RelayMessage(raw, None, str(error))
+        raise
 
 
 def _format_field(value: str | None, name: str) -> bytes:

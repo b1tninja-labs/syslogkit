@@ -265,3 +265,55 @@ def test_fingerprint_of_a_real_certificate_matches(pki):
     pinned = tls.fingerprint(der)
     assert tls.fingerprint_matches(der, [pinned])
     assert not tls.fingerprint_matches(b"other", [pinned])
+
+
+async def test_backpressure_policy():
+    # drop-oldest: a handler that blocks lets the queue fill, then the oldest are discarded
+    gate = asyncio.Event()
+    got: list[bytes] = []
+    dropped: list[bytes] = []
+
+    async def handler(message, peer):
+        await gate.wait()
+        got.append(message.msg)
+
+    listener = await receiver.listen_udp(
+        "127.0.0.1",
+        0,
+        handler,
+        max_pending=2,
+        on_drop=lambda message, peer: dropped.append(message.msg),
+    )
+    try:
+        host, port = listener.address
+        for index in range(6):
+            sender.send_udp(make(f"m{index}"), host, port)
+        await wait_for(lambda: listener.stats.received == 6)
+        # m0 is in the handler, m1 and m2 queued then pushed out by m3..m5 down to two
+        assert listener.stats.dropped_messages == 3
+        assert dropped == [b"m1", b"m2", b"m3"]
+        gate.set()
+        await wait_for(lambda: len(got) == 3)
+        assert got == [b"m0", b"m4", b"m5"]
+        assert listener.stats.handler_errors == 0
+    finally:
+        await listener.close()
+
+
+async def test_a_failing_handler_does_not_stop_later_messages():
+    got: list[bytes] = []
+
+    def handler(message, peer):
+        if message.msg == b"boom":
+            raise RuntimeError("handler bug")
+        got.append(message.msg)
+
+    listener = await receiver.listen_udp("127.0.0.1", 0, handler)
+    try:
+        host, port = listener.address
+        for text in ("boom", "ok"):
+            sender.send_udp(make(text), host, port)
+        await wait_for(lambda: got == [b"ok"])
+        assert listener.stats.handler_errors == 1
+    finally:
+        await listener.close()

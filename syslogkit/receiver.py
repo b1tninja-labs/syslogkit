@@ -9,8 +9,14 @@ sec. 3.4 says the source address SHOULD NOT identify the originator; the HOSTNAM
 message is the originator's claim. Only the TLS listener with a client CA authenticates the
 peer.
 
-Backpressure is not implemented: handlers run inline, so a slow handler slows the reader
-(TCP applies backpressure to the sender; UDP loses datagrams in the kernel). See ROADMAP.md.
+Backpressure: a parsed message is queued for its handler (``max_pending`` deep, 1024 by
+default) and one worker task runs the handler for each in arrival order, so a slow handler
+never slows the reader. When the queue is full the policy is **drop-oldest**: the message that
+has waited longest is discarded, ``ListenerStats.dropped_messages`` counts it and the optional
+``on_drop`` hook sees it. Dropping the oldest keeps the newest events, which is what a log
+collector under load usually wants; the owner decided it as the default (PORTFOLIO section 9
+item 15). Because the reader never waits, TCP's own flow control no longer reaches the sender
+through a slow handler: the queue bound and the counter replace it.
 """
 
 from __future__ import annotations
@@ -18,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import ssl
+from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
@@ -35,6 +42,8 @@ __all__ = [
 Address = tuple[str, int]
 Handler = Callable[[SyslogMessage, Address], Awaitable[None] | None]
 Malformed = Callable[[bytes, Address, Exception], None]
+Dropped = Callable[[SyslogMessage, Address], None]
+DEFAULT_MAX_PENDING = 1024
 
 
 @dataclass
@@ -46,19 +55,56 @@ class ListenerStats:
     connections: int = 0
     framing_errors: int = 0
     dropped_octets: int = 0
+    dropped_messages: int = 0
+    handler_errors: int = 0
 
 
 class Receiver:
     """A running listener. ``address`` is the bound ``(host, port)``; call ``close``."""
 
-    def __init__(self, stats: ListenerStats) -> None:
+    def __init__(
+        self,
+        stats: ListenerStats,
+        *,
+        max_pending: int = DEFAULT_MAX_PENDING,
+        on_drop: Dropped | None = None,
+    ) -> None:
+        if max_pending < 1:
+            raise ValueError("max_pending must be at least 1")
         self.stats = stats
+        self.max_pending = max_pending
+        self._on_drop = on_drop
+        self._pending: deque[tuple[SyslogMessage, Address, Handler]] = deque()
+        self._worker: asyncio.Task[None] | None = None
         self.address: Address = ("", 0)
         self._transport: asyncio.DatagramTransport | None = None
         self._server: asyncio.Server | None = None
 
+    def submit(self, message: SyslogMessage, peer: Address, handler: Handler) -> None:
+        """Queue a message for ``handler``; at ``max_pending`` the oldest queued one is dropped."""
+        if len(self._pending) >= self.max_pending:
+            old, old_peer, _ = self._pending.popleft()
+            self.stats.dropped_messages += 1
+            if self._on_drop is not None:
+                self._on_drop(old, old_peer)
+        self._pending.append((message, peer, handler))
+        if self._worker is None or self._worker.done():
+            self._worker = asyncio.get_running_loop().create_task(self._drain())
+
+    async def _drain(self) -> None:
+        while self._pending:
+            message, peer, handler = self._pending.popleft()
+            try:
+                outcome = handler(message, peer)
+                if inspect.isawaitable(outcome):
+                    await outcome
+            except Exception:  # a handler's failure must not stop later messages
+                self.stats.handler_errors += 1
+
     async def close(self) -> None:
         """Stop listening."""
+        if self._worker is not None:
+            self._worker.cancel()
         if self._transport is not None:
             self._transport.close()
         if self._server is not None:
@@ -66,13 +112,14 @@ class Receiver:
             await self._server.wait_closed()
 
 
-async def _dispatch(
+def _dispatch(
     raw: bytes,
     peer: Address,
     handler: Handler,
     on_malformed: Malformed | None,
-    stats: ListenerStats,
+    receiver: Receiver,
 ) -> None:
+    stats = receiver.stats
     try:
         message = parse(raw)
     except MessageError as error:
@@ -81,9 +128,7 @@ async def _dispatch(
             on_malformed(raw, peer, error)
         return
     stats.received += 1
-    outcome = handler(message, peer)
-    if inspect.isawaitable(outcome):
-        await outcome
+    receiver.submit(message, peer, handler)
 
 
 class _UdpProtocol(asyncio.DatagramProtocol):
@@ -91,15 +136,9 @@ class _UdpProtocol(asyncio.DatagramProtocol):
         self.receiver = receiver
         self.handler = handler
         self.on_malformed = on_malformed
-        self.tasks: set[asyncio.Task[None]] = set()
 
     def datagram_received(self, data: bytes, addr: Address) -> None:
-        peer = (addr[0], addr[1])
-        task = asyncio.get_running_loop().create_task(
-            _dispatch(data, peer, self.handler, self.on_malformed, self.receiver.stats)
-        )
-        self.tasks.add(task)
-        task.add_done_callback(self.tasks.discard)
+        _dispatch(data, (addr[0], addr[1]), self.handler, self.on_malformed, self.receiver)
 
 
 async def listen_udp(
@@ -108,13 +147,16 @@ async def listen_udp(
     handler: Handler,
     *,
     on_malformed: Malformed | None = None,
+    max_pending: int = DEFAULT_MAX_PENDING,
+    on_drop: Dropped | None = None,
 ) -> Receiver:
     """Receive one syslog message per datagram (RFC 5426 sec. 3.1, sec. 3.2).
 
     Bind ``127.0.0.1`` unless the caller names another host. Datagrams of any size the
-    kernel delivers are parsed whole.
+    kernel delivers are parsed whole. ``max_pending`` and ``on_drop`` set the drop-oldest
+    backpressure policy described in the module docstring.
     """
-    receiver = Receiver(ListenerStats())
+    receiver = Receiver(ListenerStats(), max_pending=max_pending, on_drop=on_drop)
     loop = asyncio.get_running_loop()
     transport, _ = await loop.create_datagram_endpoint(
         lambda: _UdpProtocol(receiver, handler, on_malformed), local_addr=(host, port)
@@ -139,7 +181,7 @@ async def _serve_stream(
     try:
         while chunk := await reader.read(65536):
             for raw in frames.feed(chunk):
-                await _dispatch(raw, peer, handler, on_malformed, receiver.stats)
+                _dispatch(raw, peer, handler, on_malformed, receiver)
         frames.close()
     except FramingError:
         receiver.stats.framing_errors += 1
@@ -157,8 +199,10 @@ async def _start(
     on_malformed: Malformed | None,
     context: ssl.SSLContext | None,
     make_reader: Callable[[], FrameReader],
+    max_pending: int,
+    on_drop: Dropped | None,
 ) -> Receiver:
-    receiver = Receiver(ListenerStats())
+    receiver = Receiver(ListenerStats(), max_pending=max_pending, on_drop=on_drop)
 
     async def client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         await _serve_stream(reader, writer, receiver, handler, on_malformed, make_reader())
@@ -178,6 +222,8 @@ async def listen_tls(
     *,
     on_malformed: Malformed | None = None,
     max_frame: int = 8192,
+    max_pending: int = DEFAULT_MAX_PENDING,
+    on_drop: Dropped | None = None,
 ) -> Receiver:
     """Receive octet-counted syslog over TLS (RFC 5425 sec. 4, RFC 9662; framing is sec. 4.3).
 
@@ -193,6 +239,8 @@ async def listen_tls(
         on_malformed,
         context,
         lambda: FrameReader(max_frame=max_frame, accept="octet", on_error="raise"),
+        max_pending,
+        on_drop,
     )
 
 
@@ -203,6 +251,8 @@ async def listen_tcp(
     *,
     on_malformed: Malformed | None = None,
     max_frame: int = 8192,
+    max_pending: int = DEFAULT_MAX_PENDING,
+    on_drop: Dropped | None = None,
     accept: Accept = "auto",
 ) -> Receiver:
     """Receive syslog over plaintext TCP (RFC 6587 sec. 3.4); insecure by design.
@@ -217,4 +267,6 @@ async def listen_tcp(
         on_malformed,
         None,
         lambda: FrameReader(max_frame=max_frame, accept=accept, on_error="skip"),
+        max_pending,
+        on_drop,
     )

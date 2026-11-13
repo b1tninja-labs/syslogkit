@@ -1,0 +1,70 @@
+{
+ "binary-in-octet": {
+  "closed_tail": false,
+  "frames": 1
+ },
+ "digits-only": {
+  "closed_tail": false,
+  "frames": 0
+ },
+ "garbage-then-valid": {
+  "closed_tail": false,
+  "frames": 1
+ },
+ "huge-length": {
+  "closed_tail": false,
+  "frames": 0
+ },
+ "leading-zero-length": {
+  "closed_tail": false,
+  "frames": 0
+ },
+ "length-over-max": {
+  "closed_tail": false,
+  "frames": 0
+ },
+ "lone-cr": {
+  "closed_tail": false,
+  "frames": 1
+ },
+ "long-line-no-trailer": {
+  "closed_tail": false,
+  "frames": 0
+ },
+ "negative-length": {
+  "closed_tail": false,
+  "frames": 0
+ },
+ "no-space-after-length": {
+  "closed_tail": false,
+  "frames": 0
+ },
+ "nul-bytes": {
+  "closed_tail": false,
+  "frames": 0
+ },
+ "spaces": {
+  "closed_tail": false,
+  "frames": 0
+ },
+ "truncated-octet": {
+  "closed_tail": true,
+  "frames": 0
+ },
+ "valid-lf": {
+  "closed_tail": false,
+  "frames": 2
+ },
+ "valid-mixed": {
+  "closed_tail": false,
+  "frames": 2
+ },
+ "valid-octet": {
+  "closed_tail": false,
+  "frames": 2
+ },
+ "zero-length": {
+  "closed_tail": false,
+  "frames": 0
+ }
+}

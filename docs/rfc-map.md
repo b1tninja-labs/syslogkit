@@ -34,4 +34,6 @@ Citation rules, in the order they most often get broken:
 3. Errata are checked at each milestone freeze, not once at the start.
 4. Where a claim came from a body outside the RFC series, that body is named here.
 
+Sec. 7 (registered SD-IDs) was read in full on 2026-11-13: timeQuality, origin and meta are implemented in `syslogkit/sdids.py`. Sec. 7 intro: a receiver must be ready for the stated number of characters at up to 6 octets each; sec. 7.1.3: syncAccuracy MUST NOT be present when isSynced is 0; sec. 7.3.1: sequenceId runs 1 to 2147483647 and wraps to 1. Sec. 6.3 para 5 (relay MUST forward malformed SD unaltered) is met by `message.parse_relay`.
+
 Re-verify with the RFC library rather than memory: `info('RFCnnnn')` for current status, `errata('RFCnnnn')` for corrections, and `read('RFCnnnn', view='normative')` for the MUST and SHOULD statements that become obligation rows.

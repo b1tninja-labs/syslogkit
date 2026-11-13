@@ -29,14 +29,14 @@ drift apart within one release, and the document becomes useless exactly when it
 | `sd.encode_sd()` | RFC 5424 sec. 6.3 | `[ok]` | `tests/test_sd.py::test_escaping_roundtrip` | M1 |
 | `sd.decode_sd()` | RFC 5424 sec. 6.3 | `[ok]` | `tests/test_sd.py::test_rfc_examples_valid_and_invalid` | M1 |
 | `sd.name-grammar` (erratum 6927: SD-NAME, reported not verified; the RFC text is followed, `[` accepted) | RFC 5424 sec. 6, sec. 6.3.2 | `[ok]` | `tests/test_sd.py::test_open_bracket_inside_name_is_accepted_per_rfc_text` | M1 |
-| `sd.relay-passthrough` (a relay MUST forward malformed SD unaltered; the codec raises, the caller must keep raw bytes) | RFC 5424 sec. 6.3 para 5 | `[ ]` | `tests/test_message.py::test_relay_forwards_malformed_sd_unaltered` (to be written) | M5 |
-| `sd.registered-ids` (timeQuality, origin, meta: typed helpers) | RFC 5424 sec. 7 | `[ ]` | `tests/test_sd.py::test_registered_sd_ids` (to be written; sec. 7 not yet read) | M5 |
+| `sd.relay-passthrough` (`message.parse_relay` returns the input octets untouched with `message=None` and the SD error when SD is malformed; a bad header still raises) | RFC 5424 sec. 6.3 para 5 | `[ok]` | `tests/test_message.py::test_relay_forwards_malformed_sd_unaltered` | M5 |
+| `sd.registered-ids` (`sdids.TimeQuality`, `Origin`, `Meta`, `next_sequence_id`; sec. 7 read 2026-11-13; language is not BCP 47 checked, enterpriseId not checked against IANA PENs) | RFC 5424 sec. 7 | `[ok]` | `tests/test_sdids.py::test_registered_sd_ids` | M5 |
 | `sd.shortest-form-utf8` (non-shortest UTF-8 must not be interpreted; CPython's decoder refuses it) | RFC 5424 sec. 6.3.3, sec. 8.1 | `[part]` | `tests/test_sd.py::test_invalid_utf8_value_refused` | M1 |
 | `framing.frame_octet_counted()` | RFC 6587 sec. 3.4.1, RFC 5425 sec. 4.3 | `[ok]` | `tests/test_framing.py::test_octet_counting_vectors` | M3 |
 | `framing.frame_non_transparent()` | RFC 6587 sec. 3.4.2 | `[ok]` | `tests/test_framing.py::test_non_transparent_lf_and_crlf_and_nul` | M3 |
 | `framing.FrameReader` (streaming, resync, counters, memory bound) | RFC 6587 sec. 3.4, sec. 3.4.3 | `[ok]` | `tests/test_framing.py::test_chunking_loses_and_invents_nothing` | M3 |
 | `framing.unframe()` (buffer convenience over `FrameReader`) | RFC 6587 sec. 3.4 | `[ok]` | `tests/test_framing.py::test_unframe_convenience` | M3 |
-| `framing.fuzz-corpus` (a stored corpus and a stateful hypothesis test) | RFC 6587 sec. 3.4.3 | `[ ]` | `tests/test_framing.py::test_fuzz_corpus` (to be written) | M3 |
+| `framing.fuzz-corpus` (17 stored hostile streams in `tests/corpus/framing/` with a manifest of expected frame counts, replayed under 8 chunkings, plus a hypothesis test over random bytes; not a stateful machine) | RFC 6587 sec. 3.4.3 | `[ok]` | `tests/test_framing.py::test_fuzz_corpus` | M3 |
 | `receiver.listen_udp()` | RFC 5426 sec. 3.1, sec. 3.2 | `[ok]` | `tests/test_transports.py::test_udp_sizes_and_loopback` | M2 |
 | `receiver.listen_tcp()` (plaintext, insecure by design) | RFC 6587 sec. 3.4 | `[ok]` | `tests/test_transports.py::test_tcp_framing_both_methods_and_auto_receiver` | M2 |
 | `receiver.listen_tls()` | RFC 5425 sec. 4, sec. 4.3, RFC 9662 | `[ok]` | `tests/test_transports.py::test_tls_loopback_delivers_octet_counted_messages` | M4 |
@@ -51,7 +51,8 @@ drift apart within one release, and the document becomes useless exactly when it
 | `tls.no-early-data` (Python's `ssl` has no switch to enable it; off by construction, not yet asserted) | RFC 9662 sec. 6 | `[ ]` | `tests/test_transports.py::test_no_early_data` (to be written) | M4 |
 | `legacy.parse_3164()` | RFC 3164 sec. 4.1, sec. 4.3 | `[ok]` | `tests/test_legacy.py::test_full_packet` | M1 |
 | `rx.drop-accounting` (octets dropped by framing are counted in `ListenerStats.dropped_octets`; a bounded queue with a drop policy is not built) | RFC 6587 sec. 3.4.3 | `[part]` | `tests/test_transports.py::test_tcp_garbage_is_counted_not_lost_silently` | M5 |
-| `rx.backpressure-policy` (handlers run inline; the owner decides who owns the policy) | - | `[ ]` | `tests/test_transports.py::test_backpressure_policy` (to be written) | M5 |
+| `rx.backpressure-policy` (bounded queue, `max_pending` default 1024, drop-oldest default as decided, `on_drop` hook, `ListenerStats.dropped_messages`; no drop-newest or blocking policy) | - | `[ok]` | `tests/test_transports.py::test_backpressure_policy` | M5 |
+| `rx.handler-isolation` (a handler exception is counted in `handler_errors` and later messages still run) | - | `[ok]` | `tests/test_transports.py::test_a_failing_handler_does_not_stop_later_messages` | M5 |
 | `rx.metrics-export` | - | `[ ]` | `tests/test_transports.py::test_metrics_snapshot` (to be written) | M5 |
 | `dtls.*` (RFC 6012; no DTLS in the standard library or `cryptography`; owner decision pending) | RFC 6012, RFC 8996, RFC 9662 sec. 5 | `[no]` | the decision is recorded in `syslogkit/dtls.py` and section 5 below | M6 |
 | `interop.non-python` (evidence against rsyslog or syslog-ng) | RFC 5424, RFC 5425, RFC 6587 | `[ ]` | `docs/interop.md` (to be written) | M5 |
@@ -60,9 +61,9 @@ drift apart within one release, and the document becomes useless exactly when it
 
 - M1 message, PRI and structured data codec, exact round trip: done (2026-11-13), RFC 3164 tolerant parser included
 - M2 UDP and TCP senders plus receivers: done on loopback
-- M3 framing with resync tests and a fuzz corpus: framing done, the stored fuzz corpus is owed
+- M3 framing with resync tests and a fuzz corpus: done (2026-11-13)
 - M4 TLS transport honouring RFC 9662 and the RFC 5425 profiles: CA-validated contexts and loopback done; fingerprint-only trust, name table and the early-data assertion owed
-- M5 drop accounting, backpressure, metrics export, relay passthrough, registered SD-IDs, interop evidence
+- M5 drop accounting, backpressure, metrics export, relay passthrough, registered SD-IDs, interop evidence: backpressure, relay passthrough and registered SD-IDs done (2026-11-13); metrics export and interop evidence owed
 - M6 DTLS (blocked on an owner decision, see section 5), then publication: 0.1.0
 
 Every milestone is accepted by its rows above flipping to `[ok]` with a named test, not by
@@ -88,7 +89,7 @@ the code existing. Coverage in `pyproject.toml` ratchets in the same commit.
 
 ## 5. Open questions
 
-- Backpressure ownership (still open): handlers run inline today, so a slow handler slows the reader. Recommended: the receiver exposes a hook and ships one default policy (drop-oldest with a counter). The `rx.*` rows exist; the owner picks the policy.
+- Backpressure ownership (decided: drop-oldest default with a counter and a hook, built 2026-11-13). Open follow-up: TCP no longer pushes back on a sender through a slow handler, so a deployment that wants lossless TCP needs a blocking policy; add one only on request.
 - **Owner decision: DTLS (RFC 6012, M6).** The standard library has no DTLS (measured on Python 3.14.3 with OpenSSL 3.0: no name in `ssl` mentions it) and `cryptography` has primitives but no DTLS record or handshake layer. Writing our own is declined (PORTFOLIO section 5 "own TLS declined"). srtpkit's DTLS-SRTP needs the same layer. Options: (a) drop M6 and publish 0.1.0 without DTLS, (b) bind an external DTLS library as an optional extra, which breaks the zero-dependency rule, (c) wait for a stdlib or `cryptography` DTLS. Recommendation: (a), keep the `dtls.*` row `[no]`. Until decided the row stays `[no]` and `syslogkit/dtls.py` is an honest empty module.
 - Fingerprint-only trust needs a post-handshake check on a context whose verify mode is off; decide whether the library exposes that or only CA-validated contexts.
 

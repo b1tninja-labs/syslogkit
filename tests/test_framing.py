@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import random
+from pathlib import Path
+
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
@@ -142,3 +146,68 @@ def test_chunking_loses_and_invents_nothing(messages, cuts):
         step += 1
     assert out == messages
     assert reader.pending == 0 and reader.dropped == 0
+
+
+CORPUS = Path(__file__).parent / "corpus" / "framing"
+MANIFEST = json.loads((CORPUS / "manifest.json").read_text(encoding="utf-8"))
+
+
+def _chunked(data: bytes, size: int) -> list[bytes]:
+    return [data[i : i + size] for i in range(0, len(data), size)] or [b""]
+
+
+def _read(data: bytes, chunks: list[bytes], **kwargs) -> tuple[list[bytes], FrameReader]:
+    reader = FrameReader(max_frame=8192, **kwargs)
+    frames: list[bytes] = []
+    for chunk in chunks:
+        frames += reader.feed(chunk)
+    reader.close()
+    return frames, reader
+
+
+def test_corpus_manifest_names_every_file():
+    on_disk = {p.stem for p in CORPUS.glob("*.bin")}
+    assert on_disk == set(MANIFEST)
+    assert len(on_disk) >= 15
+
+
+@pytest.mark.parametrize("name", sorted(MANIFEST))
+def test_fuzz_corpus(name):
+    data = (CORPUS / f"{name}.bin").read_bytes()
+    whole, reader = _read(data, [data])
+    assert len(whole) == MANIFEST[name]["frames"]
+    # the same frames come out however the stream is cut
+    rng = random.Random(name)  # seeded: a failure replays
+    cuts = [_chunked(data, 1), _chunked(data, 7), _chunked(data, 4096)]
+    for _ in range(5):
+        pieces, at = [], 0
+        while at < len(data):
+            step = rng.randint(1, 50)
+            pieces.append(data[at : at + step])
+            at += step
+        cuts.append(pieces)
+    for pieces in cuts:
+        again, _ = _read(data, pieces)
+        assert again == whole
+    # nothing is invented: delivered, dropped and pending octets never exceed the input
+    assert sum(map(len, whole)) + reader.dropped + reader.pending <= len(data)
+    # the strict reader either agrees or fails with FramingError and nothing else
+    try:
+        strict, _ = _read(data, [data], on_error="raise")
+    except FramingError:
+        pass
+    else:
+        assert strict == whole
+
+
+@given(st.binary(max_size=300), st.lists(st.integers(1, 30), min_size=1, max_size=6))
+def test_hostile_streams_never_escape_the_reader(data, cuts):
+    reader = FrameReader(max_frame=64)
+    at, i, total = 0, 0, 0
+    while at < len(data):
+        step = cuts[i % len(cuts)]
+        total += sum(map(len, reader.feed(data[at : at + step])))
+        at, i = at + step, i + 1
+        assert reader.pending <= 64 + 8
+    reader.close()
+    assert total + reader.dropped <= len(data)
