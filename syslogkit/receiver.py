@@ -17,6 +17,17 @@ has waited longest is discarded, ``ListenerStats.dropped_messages`` counts it an
 collector under load usually wants; the owner decided it as the default (PORTFOLIO section 9
 item 15). Because the reader never waits, TCP's own flow control no longer reaches the sender
 through a slow handler: the queue bound and the counter replace it.
+
+Opt-in lossless mode, TCP and TLS only: ``policy="block"``. The stream reader then waits for
+room in the queue before it parses the next frame, so it stops calling ``read``, the socket
+buffer fills and TCP's own flow control slows the sender; no message is dropped
+(``dropped_messages`` stays 0) and ``ListenerStats.backpressure_waits`` counts each stall. The
+price is that one slow handler slows every connection of the listener, and a sender that
+cannot block (a daemon writing to a full socket) may itself drop or stall, so the loss moves
+to the sender. UDP refuses it: a datagram receiver has no way to push back, and a blocking
+policy there would only hide drops in the kernel's socket buffer. :meth:`Receiver.drain`
+waits until every queued message has been handled, which a graceful shutdown needs because
+:meth:`Receiver.close` cancels the worker.
 """
 
 from __future__ import annotations
@@ -26,7 +37,8 @@ import inspect
 import ssl
 from collections import deque
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from typing import Literal
 
 from .framing import Accept, FrameReader, FramingError
 from .message import MessageError, SyslogMessage, parse
@@ -44,6 +56,8 @@ Handler = Callable[[SyslogMessage, Address], Awaitable[None] | None]
 Malformed = Callable[[bytes, Address, Exception], None]
 Dropped = Callable[[SyslogMessage, Address], None]
 DEFAULT_MAX_PENDING = 1024
+Policy = Literal["drop-oldest", "block"]
+POLICIES: tuple[str, ...] = ("drop-oldest", "block")
 
 
 @dataclass
@@ -57,6 +71,11 @@ class ListenerStats:
     dropped_octets: int = 0
     dropped_messages: int = 0
     handler_errors: int = 0
+    backpressure_waits: int = 0
+
+    def snapshot(self) -> dict[str, int]:
+        """The counters as a plain dict, for a metrics exporter to read; nothing is reset."""
+        return asdict(self)
 
 
 class Receiver:
@@ -68,11 +87,16 @@ class Receiver:
         *,
         max_pending: int = DEFAULT_MAX_PENDING,
         on_drop: Dropped | None = None,
+        policy: Policy = "drop-oldest",
     ) -> None:
         if max_pending < 1:
             raise ValueError("max_pending must be at least 1")
+        if policy not in POLICIES:
+            raise ValueError(f"policy must be one of {POLICIES}, not {policy!r}")
         self.stats = stats
         self.max_pending = max_pending
+        self.policy = policy
+        self._space = asyncio.Event()
         self._on_drop = on_drop
         self._pending: deque[tuple[SyslogMessage, Address, Handler]] = deque()
         self._worker: asyncio.Task[None] | None = None
@@ -81,19 +105,55 @@ class Receiver:
         self._server: asyncio.Server | None = None
 
     def submit(self, message: SyslogMessage, peer: Address, handler: Handler) -> None:
-        """Queue a message for ``handler``; at ``max_pending`` the oldest queued one is dropped."""
+        """Queue a message for ``handler``; at ``max_pending`` the oldest queued one is dropped.
+
+        Always the drop-oldest rule: a caller that holds a ``block`` receiver waits first with
+        :meth:`submit_wait`, which leaves nothing to drop.
+        """
         if len(self._pending) >= self.max_pending:
             old, old_peer, _ = self._pending.popleft()
             self.stats.dropped_messages += 1
             if self._on_drop is not None:
                 self._on_drop(old, old_peer)
+        self._enqueue(message, peer, handler)
+
+    async def submit_wait(self, message: SyslogMessage, peer: Address, handler: Handler) -> None:
+        """Queue a message, waiting for room first when the policy is ``block``.
+
+        With ``drop-oldest`` this is :meth:`submit` and never waits.
+        """
+        if self.policy == "block":
+            while len(self._pending) >= self.max_pending:
+                self.stats.backpressure_waits += 1
+                self._space.clear()
+                await self._space.wait()
+            self._enqueue(message, peer, handler)
+        else:
+            self.submit(message, peer, handler)
+
+    def _enqueue(self, message: SyslogMessage, peer: Address, handler: Handler) -> None:
         self._pending.append((message, peer, handler))
         if self._worker is None or self._worker.done():
             self._worker = asyncio.get_running_loop().create_task(self._drain())
 
+    def metrics(self) -> dict[str, int | str]:
+        """A snapshot for export: every :class:`ListenerStats` counter plus the queue state."""
+        return {
+            **self.stats.snapshot(),
+            "pending": len(self._pending),
+            "max_pending": self.max_pending,
+            "policy": self.policy,
+        }
+
+    async def drain(self) -> None:
+        """Wait until every queued message has been handed to its handler and handled."""
+        while self._worker is not None and not self._worker.done():
+            await asyncio.shield(self._worker)
+
     async def _drain(self) -> None:
         while self._pending:
             message, peer, handler = self._pending.popleft()
+            self._space.set()
             try:
                 outcome = handler(message, peer)
                 if inspect.isawaitable(outcome):
@@ -112,13 +172,9 @@ class Receiver:
             await self._server.wait_closed()
 
 
-def _dispatch(
-    raw: bytes,
-    peer: Address,
-    handler: Handler,
-    on_malformed: Malformed | None,
-    receiver: Receiver,
-) -> None:
+def _parse_counted(
+    raw: bytes, peer: Address, on_malformed: Malformed | None, receiver: Receiver
+) -> SyslogMessage | None:
     stats = receiver.stats
     try:
         message = parse(raw)
@@ -126,9 +182,21 @@ def _dispatch(
         stats.malformed += 1
         if on_malformed is not None:
             on_malformed(raw, peer, error)
-        return
+        return None
     stats.received += 1
-    receiver.submit(message, peer, handler)
+    return message
+
+
+def _dispatch(
+    raw: bytes,
+    peer: Address,
+    handler: Handler,
+    on_malformed: Malformed | None,
+    receiver: Receiver,
+) -> None:
+    message = _parse_counted(raw, peer, on_malformed, receiver)
+    if message is not None:
+        receiver.submit(message, peer, handler)
 
 
 class _UdpProtocol(asyncio.DatagramProtocol):
@@ -149,13 +217,17 @@ async def listen_udp(
     on_malformed: Malformed | None = None,
     max_pending: int = DEFAULT_MAX_PENDING,
     on_drop: Dropped | None = None,
+    policy: Policy = "drop-oldest",
 ) -> Receiver:
     """Receive one syslog message per datagram (RFC 5426 sec. 3.1, sec. 3.2).
 
     Bind ``127.0.0.1`` unless the caller names another host. Datagrams of any size the
     kernel delivers are parsed whole. ``max_pending`` and ``on_drop`` set the drop-oldest
-    backpressure policy described in the module docstring.
+    backpressure policy described in the module docstring; ``policy="block"`` is refused here
+    because a datagram receiver cannot push back on its senders.
     """
+    if policy != "drop-oldest":
+        raise ValueError("UDP cannot apply backpressure: only policy='drop-oldest' is possible")
     receiver = Receiver(ListenerStats(), max_pending=max_pending, on_drop=on_drop)
     loop = asyncio.get_running_loop()
     transport, _ = await loop.create_datagram_endpoint(
@@ -181,7 +253,9 @@ async def _serve_stream(
     try:
         while chunk := await reader.read(65536):
             for raw in frames.feed(chunk):
-                _dispatch(raw, peer, handler, on_malformed, receiver)
+                message = _parse_counted(raw, peer, on_malformed, receiver)
+                if message is not None:
+                    await receiver.submit_wait(message, peer, handler)
         frames.close()
     except FramingError:
         receiver.stats.framing_errors += 1
@@ -201,8 +275,9 @@ async def _start(
     make_reader: Callable[[], FrameReader],
     max_pending: int,
     on_drop: Dropped | None,
+    policy: Policy,
 ) -> Receiver:
-    receiver = Receiver(ListenerStats(), max_pending=max_pending, on_drop=on_drop)
+    receiver = Receiver(ListenerStats(), max_pending=max_pending, on_drop=on_drop, policy=policy)
 
     async def client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         await _serve_stream(reader, writer, receiver, handler, on_malformed, make_reader())
@@ -224,13 +299,15 @@ async def listen_tls(
     max_frame: int = 8192,
     max_pending: int = DEFAULT_MAX_PENDING,
     on_drop: Dropped | None = None,
+    policy: Policy = "drop-oldest",
 ) -> Receiver:
     """Receive octet-counted syslog over TLS (RFC 5425 sec. 4, RFC 9662; framing is sec. 4.3).
 
     Only octet counting is accepted, as RFC 5425 sec. 4.3 requires. The reader handles
     messages up to ``max_frame`` (RFC 5425 sec. 4.3.1: MUST handle 2048, SHOULD handle 8192).
     A framing error closes the connection, because after a bad length the stream cannot be
-    resynchronised safely.
+    resynchronised safely. ``policy="block"`` stops reading while the queue is full instead of
+    dropping the oldest message (see the module docstring).
     """
     return await _start(
         host,
@@ -241,6 +318,7 @@ async def listen_tls(
         lambda: FrameReader(max_frame=max_frame, accept="octet", on_error="raise"),
         max_pending,
         on_drop,
+        policy,
     )
 
 
@@ -254,11 +332,13 @@ async def listen_tcp(
     max_pending: int = DEFAULT_MAX_PENDING,
     on_drop: Dropped | None = None,
     accept: Accept = "auto",
+    policy: Policy = "drop-oldest",
 ) -> Receiver:
     """Receive syslog over plaintext TCP (RFC 6587 sec. 3.4); insecure by design.
 
     Nothing authenticates or protects the stream. Use :func:`listen_tls` for anything
-    that leaves the host.
+    that leaves the host. ``policy="block"`` stops reading while the queue is full instead of
+    dropping the oldest message (see the module docstring).
     """
     return await _start(
         host,
@@ -269,4 +349,5 @@ async def listen_tcp(
         lambda: FrameReader(max_frame=max_frame, accept=accept, on_error="skip"),
         max_pending,
         on_drop,
+        policy,
     )

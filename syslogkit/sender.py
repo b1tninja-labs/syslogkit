@@ -9,6 +9,7 @@ from collections.abc import Iterable
 
 from .framing import frame_non_transparent, frame_octet_counted
 from .message import SyslogMessage, format
+from .tls import TlsPolicyError, pinned_client_context, verify_pinned
 from .udp import max_message_size
 
 __all__ = [
@@ -58,11 +59,18 @@ async def _send_stream(
     framing: str,
     context: ssl.SSLContext | None,
     server_hostname: str | None,
+    pinned: Iterable[str] | None = None,
 ) -> int:
     reader, writer = await asyncio.open_connection(
         host, port, ssl=context, server_hostname=server_hostname if context else None
     )
     del reader
+    if pinned is not None:
+        try:
+            verify_pinned(writer.get_extra_info("ssl_object"), pinned)
+        except TlsPolicyError:
+            writer.close()
+            raise
     count = 0
     try:
         for message in messages:
@@ -99,13 +107,26 @@ async def send_tls(
     host: str,
     port: int,
     messages: Iterable[bytes | SyslogMessage],
-    context: ssl.SSLContext,
+    context: ssl.SSLContext | None = None,
     *,
     server_hostname: str | None = None,
+    pinned: Iterable[str] | None = None,
 ) -> int:
     """Send octet-counted messages over TLS (RFC 5425 sec. 4.3). Returns the count written.
 
     ``server_hostname`` defaults to ``host`` and is checked against the certificate by a
     context from :func:`syslogkit.tls.client_context`.
+
+    ``pinned`` is a list of ``label:HH:...`` certificate fingerprints (RFC 5425 sec. 4.2.2) the
+    peer must match, checked right after the handshake and before any message is written; a
+    mismatch closes the connection and raises :class:`syslogkit.tls.TlsPolicyError`. With
+    ``pinned`` and no ``context``, :func:`syslogkit.tls.pinned_client_context` is used, which
+    skips chain and name validation: the pin is then the only authentication (sec. 5.1).
     """
-    return await _send_stream(host, port, messages, "octet", context, server_hostname or host)
+    if context is None:
+        if pinned is None:
+            raise TlsPolicyError("give a verifying context, or fingerprints to pin")
+        context = pinned_client_context()
+    return await _send_stream(
+        host, port, messages, "octet", context, server_hostname or host, pinned
+    )
