@@ -5,10 +5,15 @@
      the badges stay commented out until the tag exists.
 -->
 
-**Pre-alpha shell.** The package surface, the obligation matrix and the CI gates exist.
-No protocol behaviour is implemented: every public function raises `NotImplementedError`,
-and the test suite records that rather than hiding it. Read
-[ROADMAP.md](ROADMAP.md) before depending on any of it.
+**Pre-alpha.** RFC 5424 messages and STRUCTURED-DATA, RFC 6587 and RFC 5425 framing, a tolerant
+RFC 3164 parser, UDP, plaintext TCP and TLS senders and receivers (loopback-tested) are
+implemented. DTLS (RFC 6012) is not, and cannot be on the standard library; backpressure policy,
+fingerprint-only TLS trust and interoperability evidence are owed. Read
+[ROADMAP.md](ROADMAP.md) for each row's status before depending on any of it.
+
+**Dependencies.** None at runtime: the standard library only, including `ssl` for TLS. The
+`cryptography` package is allowed for cryptographic primitives and is used only by the tests, to
+make a throwaway CA.
 
 syslogkit -- RFC 5424 end to end, sender and receiver
 
@@ -68,6 +73,7 @@ document, which is the honest grain size for a plan. See [docs/rfc-map.md](docs/
 | `tls` | TLS transport, profiles and cipher suites (RFC 5425, RFC 9662) |
 | `dtls` | the datagram secure transport (RFC 6012) |
 | `receiver` | listener surface, drop counters, backpressure |
+| `sender` | UDP, TCP and TLS senders |
 | `legacy` | RFC 3164 tolerance, labelled as compatibility rather than correctness |
 
 ## What it does not do

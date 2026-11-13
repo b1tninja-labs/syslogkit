@@ -5,17 +5,20 @@ Python's stdlib ships a 1988-era SysLogHandler and nothing else.
 
 from __future__ import annotations
 
-from . import apps, cli, dtls, framing, legacy, message, pri, receiver, sd, tcp, tls, udp
-from .framing import frame_octet_counted, unframe
+from . import apps, cli, dtls, framing, legacy, message, pri, receiver, sd, sender, tcp, tls, udp
+from .framing import FrameReader, frame_octet_counted, unframe
 from .legacy import parse_3164
-from .message import format, parse
-from .receiver import listen_tls, listen_udp
-from .sd import decode_sd, encode_sd
-from .tls import client_context
+from .message import SyslogMessage, format, parse
+from .receiver import listen_tcp, listen_tls, listen_udp
+from .sd import SdElement, decode_sd, encode_sd
+from .tls import client_context, server_context
 
 __version__ = "0.1.0"
 
 __all__ = [
+    "FrameReader",
+    "SdElement",
+    "SyslogMessage",
     "__version__",
     "apps",
     "cli",
@@ -27,6 +30,7 @@ __all__ = [
     "frame_octet_counted",
     "framing",
     "legacy",
+    "listen_tcp",
     "listen_tls",
     "listen_udp",
     "message",
@@ -35,6 +39,8 @@ __all__ = [
     "pri",
     "receiver",
     "sd",
+    "sender",
+    "server_context",
     "tcp",
     "tls",
     "udp",

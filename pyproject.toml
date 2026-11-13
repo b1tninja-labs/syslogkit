@@ -40,6 +40,8 @@ dev = [
   "pytest-asyncio",
   "pytest-cov",
   "hypothesis",
+  # tests only: makes a throwaway CA for the TLS loopback tests; no runtime use.
+  "cryptography",
   "ruff",
   "mypy",
   # tools/check_dist.py cannot assert a wheel contains what the docs promise without
@@ -81,7 +83,7 @@ source = ["syslogkit"]
 # coverage for the line that raises. Raise this in the commit that implements a
 # milestone, never in a commit that only adds tests, so the number keeps meaning
 # "this behaviour is exercised" rather than "this file was imported".
-fail_under = 45
+fail_under = 90
 show_missing = true
 exclude_lines = [
   "if __name__ == .__main__.:",
@@ -104,7 +106,9 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # S101 in tests is the policy, S311 is a seeded generator rather than a token, and a
 # test double has to accept parameters it ignores, which ARG would otherwise flag.
-"tests/*" = ["S101", "S106", "S311", "ARG001", "ARG002"]
+# ARG005 is the same rule for a lambda handler; PT018 is not enforced because the protocol vector
+# tests assert several fields of one parsed message in a line on purpose.
+"tests/*" = ["S101", "S106", "S311", "ARG001", "ARG002", "ARG005", "PT018"]
 
 [tool.ruff.format]
 quote-style = "double"

@@ -12,8 +12,10 @@ other way round.
 
 ## Position
 
-**Tier 3, wave 3** - the routing-operations story. Tier 3 is planned: a solid gap with no
-urgency, and better work once Tier 1 exists.
+**Tier 3, wave 5** - the rest, in tier order, one at a time (PORTFOLIO section 7). An earlier
+version of this file said wave 3, the routing-operations story; that was stale, and syslog is
+not a routing protocol. Tier 3 is planned: a solid gap with no urgency, and better work once
+Tier 1 exists.
 
 ## Depends on
 

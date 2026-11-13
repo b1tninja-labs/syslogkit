@@ -54,7 +54,9 @@ rather than merely incomplete.
 3. **Normative text is never paraphrased from memory.** Fetch it with `rfclib` and
    cite the section. If the text you fetch does not say what the obligation claims,
    the obligation is wrong: fix the roadmap row and say so in the commit.
-4. **Dependencies.** `pyproject.toml` here declares no runtime dependencies. Adding a runtime
+4. **Dependencies.** `pyproject.toml` here declares no runtime dependencies: standard library only
+   (TLS is `ssl`). The `cryptography` package may be used for cryptographic primitives, and today
+   only the tests use it. Everything else, every wire format, is ours. Adding a runtime
    dependency needs a paragraph of justification in `docs/strategy.md` explaining
    why the standard library is not enough.
 5. **Scope.** What is deliberately absent is listed under Non-goals in `README.md`.
@@ -63,7 +65,7 @@ rather than merely incomplete.
 
 ## Read before implementing
 
-- RFC 5424 has 5 errata on file with none verified; RFC 5425 has 2 on file, none verified. Re-check both pages before M1.
+- RFC 5424 has 5 errata on file with none verified (2682, 4967, 5010, 6647, 6927); RFC 5425 has 2, held and editorial. The contents and what the code does about 6927 are in `ROADMAP.md` section 3. Re-check before each milestone freeze.
 - RFC 6587 is Historic, not Standards Track: it describes deployed practice, so framing tests must include the implementations it documents.
 - RFC 5424 obsoleted RFC 3164. A 3164 parser is a compatibility layer, and says so in its name.
 
