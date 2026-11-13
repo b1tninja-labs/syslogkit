@@ -8,8 +8,10 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+from syslogkit.message import MessageError, format, parse, parse_relay
 from syslogkit.sd import SdElement, SdError, decode_sd, decode_sd_bytes, encode_sd
 
+BOM = b"\xef\xbb\xbf"
 EX1 = '[exampleSDID@32473 iut="3" eventSource="Application" eventID="1011"]'
 EX2 = EX1 + '[examplePriority@32473 class="high"]'
 ELEM1 = SdElement(
@@ -171,3 +173,73 @@ def test_roundtrip_property(items):
     elements = tuple(SdElement(name, tuple(params)) for name, params in items)
     text = encode_sd(elements)
     assert decode_sd(text) == (elements, len(text))
+
+
+# RFC 5424 sec. 6.3.3 and sec. 6.4: UTF-8 must be in the "shortest form", and what is not must not
+# be interpreted. The overlong forms below are the ones UNICODE-TR36 sec. 3.1 warns about: each is
+# a longer encoding of a character that has a shorter one, and a filter that checks "/" or NUL
+# before decoding would miss them.
+NON_SHORTEST = {
+    "NUL as two octets": b"\xc0\x80",
+    "slash as two octets": b"\xc0\xaf",
+    "0x7f as two octets": b"\xc1\xbf",
+    "slash as three octets": b"\xe0\x80\xaf",
+    "U+07FF as three octets": b"\xe0\x9f\xbf",
+    "slash as four octets": b"\xf0\x80\x80\xaf",
+    "U+FFFF as four octets": b"\xf0\x8f\xbf\xbf",
+}
+NOT_UTF8_EITHER = {
+    "a surrogate half": b"\xed\xa0\x80",
+    "past U+10FFFF": b"\xf4\x90\x80\x80",
+    "a lone continuation octet": b"\x80",
+    "a truncated sequence": b"\xe2\x82",
+}
+SHORTEST_BOUNDARIES = {
+    "U+0080": "\u0080",
+    "U+07FF": "߿",
+    "U+0800": "ࠀ",
+    "U+FFFF": "￿",
+    "U+10000": "\U00010000",
+    "U+10FFFF": "\U0010ffff",
+}
+
+
+def test_non_shortest_utf8_is_not_interpreted():
+    for name, octets in {**NON_SHORTEST, **NOT_UTF8_EITHER}.items():
+        with pytest.raises(SdError, match="UTF-8"):
+            decode_sd_bytes(b'[a k="' + octets + b'"]')
+        # the same octets spread through a longer value, and in the second parameter
+        with pytest.raises(SdError, match="UTF-8"):
+            decode_sd_bytes(b'[a j="ok" k="x' + octets + b'y"]')
+        assert name  # each case is named so a failure says which
+
+
+def test_shortest_form_boundaries_are_accepted():
+    for name, character in SHORTEST_BOUNDARIES.items():
+        elements, _ = decode_sd_bytes(b'[a k="' + character.encode("utf-8") + b'"]')
+        assert elements[0].params == (("k", character),), name
+
+
+def test_a_relay_forwards_a_non_shortest_value_without_interpreting_it():
+    # sec. 6.3 para 5 and sec. 6.3.3: the collector refuses to read the value, the relay keeps the octets
+    raw = b'<1>1 - - - - - [a k="' + NON_SHORTEST["slash as two octets"] + b'"] msg'
+    with pytest.raises(MessageError, match="STRUCTURED-DATA"):
+        parse(raw)
+    relayed = parse_relay(raw)
+    assert relayed.raw == raw
+    assert relayed.message is None
+
+
+def test_msg_with_a_bom_and_a_non_shortest_form_is_not_utf8():
+    # sec. 6.4: "the MSG MUST NOT be interpreted as being encoded in UTF-8"; the octets are kept whole
+    for name, octets in {**NON_SHORTEST, **NOT_UTF8_EITHER}.items():
+        body = BOM + b"before " + octets
+        message = parse(b"<1>1 - - - - - - " + body)
+        assert not message.msg_is_utf8, name
+        assert message.msg == body, name
+        assert format(message) == b"<1>1 - - - - - - " + body, name
+    # while the shortest form of the same characters is read as UTF-8, with the BOM stripped
+    for name, character in SHORTEST_BOUNDARIES.items():
+        message = parse(b"<1>1 - - - - - - " + BOM + character.encode("utf-8"))
+        assert message.msg_is_utf8, name
+        assert message.msg == character.encode("utf-8"), name
